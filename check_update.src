@@ -1,0 +1,9 @@
+:global sendToTele "https://api.telegram.org/bot<you bot id>/sendmessage\?chat_id=<you chat id>&text=";
+:global sysname [/system identity get name]
+:global installedos [/system package update get installed-version]
+:global latestos [/system package update get latest-version]
+:global channel [/system package update get channel]
+:if ( $installedos != $latestos) do={/tool fetch url="$sendToTele Router: $sysname%0ANew version RouterOS is avalaible!%0AChannel: $channel%0AInstalled OS Version: $installedos%0ALatest OS Version: $latestos"  keep-result=no}
+:global currentfirmware [/system routerboard get current-firmware]
+:global latestfirmware [/system routerboard get upgrade-firmware]
+:if ( $currentfirmware != $latestfirmware) do={/tool fetch url="$sendToTele Router: $sysname%0ANew version firmware is avalaible!%0AInstalled Firmware Version: $currentfirmware%0ALatest Firmware Version: $latestfirmware"  keep-result=no}
