@@ -1,0 +1,66 @@
+# ISP Checker
+# Developed by Dragon_Knight, 2016 - 2017.
+# Modified by lammeronline
+
+:local CFGSchedulerName "schedule1";
+:local CFGSchedulerNormalInterval 00:00:30;
+:local CFGPingCount 10;
+:local CFGPingError 1;
+:local CFGPingInterval "150ms";
+:local CFGPingInterface "<you interface>";
+:local CFGPingInterfaceComment [/interface get [find name="$CFGPingInterface"] comment ];
+:local CFGPingAddress "8.8.8.8";
+:global CFGTelegramBotToken "<you telegramm bo token>";
+:global CFGTelegramChatId <you chat id>;
+
+:global LastPingStatus;
+:global SendString;
+
+:local GetCurrentTime do={
+   :local currentDate [/system clock get date];
+   :local mouth {"jan"="01";"feb"="02";"mar"="03";"apr"="04";"may"="05";"jun"="06";"jul"="07";"aug"="08";"sep"="09";"oct"=10;"nov"="11";"dec"="12"};
+   :return ([:pick $currentDate 7 11] . "." . $mouth -> [:pick $currentDate 0 3] . "." . [:pick $currentDate 4 6] . " " . [/system clock get time]);
+};
+
+:local Send2Telegram do={
+   :do {
+      :local URLEncodeString "";
+      :for i from=0 to=([:len $string] - 1) do={
+         :local char [:pick $string $i];
+         :if ($char = " ") do={:set $char "%20";};
+         :if ($char = "-") do={:set $char "%2D";};
+         :if ($char = ":") do={:set $char "%3A";};
+         :set URLEncodeString ($URLEncodeString . $char);
+      };
+      
+      /tool fetch keep-result=no mode=https url=("https://api.telegram.org/bot" . $CFGTelegramBotToken . "/sendmessage\?chat_id=" . $CFGTelegramChatId . "&text=" . "%0A"  . $URLEncodeString);
+   } on-error={
+      :log error "[ISP Checker]: Error sending message.";
+   };
+};
+
+:local pingResult [ping count=$CFGPingCount interval=$CFGPingInterval interface=$CFGPingInterface $CFGPingAddress];
+
+:if ($pingResult < ($CFGPingCount - $CFGPingError)) do={
+   :if ($pingResult = 0) do={
+         :if ($LastPingStatus != 1) do={
+         :set LastPingStatus 1;
+         :set SendString ($SendString . [$GetCurrentTime] . ": $CFGPingInterface ($CFGPingInterfaceComment): Ping failed (all " . $CFGPingCount . " packets lost)!%0A");
+         /system scheduler set [find name=$CFGSchedulerName] interval=((CFGPingInterval * CFGPingCount) + 00:00:01.500);
+      };
+   } else={
+      :if ($LastPingStatus != 2) do={
+         :set LastPingStatus 2;
+         :set SendString ($SendString . [$GetCurrentTime] . ": $CFGPingInterface ($CFGPingInterfaceComment): Ping unstable (" . $pingResult . " of " . $CFGPingCount . " received)!%0A");
+         /system scheduler set [find name=$CFGSchedulerName] interval=((CFGPingInterval * CFGPingCount) + 00:00:01.500);
+      };
+   };
+} else={
+   :if ($LastPingStatus != 3) do={
+      :set LastPingStatus 3;
+      :set SendString ($SendString . [$GetCurrentTime] . ": $CFGPingInterface ($CFGPingInterfaceComment): Ping ok!");
+      [$Send2Telegram string=$SendString];
+      :set SendString "";
+      /system scheduler set [find name=$CFGSchedulerName] interval=$CFGSchedulerNormalInterval;
+   };
+};
