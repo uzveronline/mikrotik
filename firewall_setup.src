@@ -1,0 +1,92 @@
+:local ExternalInterface "You $ExternalInterface interface"
+
+/ip firewall filter
+
+# Блокируем всех из чёрного списка
+add action=drop chain=input comment="Drop blocklist" dst-address-list=blocklist
+add action=drop chain=forward comment="Drop blocklist" dst-address-list=blocklist
+
+# Фильтруем полезный ICMP
+add chain=icmp protocol=icmp icmp-options=0:0 action=accept comment="ICMP echo reply"
+add chain=icmp protocol=icmp icmp-options=3:0 action=accept comment="ICMP net unreachable"
+add chain=icmp protocol=icmp icmp-options=3:1 action=accept comment="ICMP host unreachable"
+add chain=icmp protocol=icmp icmp-options=3:4 action=accept comment="ICMP host unreachable fragmentation required"
+add chain=icmp protocol=icmp icmp-options=4:0 action=accept comment="ICMP allow source quench"
+add chain=icmp protocol=icmp icmp-options=8:0 action=accept comment="ICMP allow echo request"
+add chain=icmp protocol=icmp icmp-options=11:0 action=accept comment="ICMP allow time exceed"
+add chain=icmp protocol=icmp icmp-options=12:0 action=accept comment="ICMP allow parameter bad"
+add chain=icmp action=drop comment="ICMP deny all other types"
+
+# Блокируем Bogon
+add action=drop chain=forward comment="Block Bogon IP Address" src-address=127.0.0.0/8
+add action=drop chain=forward dst-address=127.0.0.0/8
+add action=drop chain=forward src-address=224.0.0.0/3
+add action=drop chain=forward dst-address=224.0.0.0/3
+
+# Блокируем DNS запросы на внешний интерфейс
+add action=drop chain=input comment="Drop DNS" dst-port=53 in-interface=$ExternalInterface protocol=udp
+add action=drop chain=input dst-port=53 in-interface=$ExternalInterface protocol=tcp
+
+# Блокируем взлом Windows
+# https://support.microsoft.com/ru-ru/kb/826955
+add action=drop chain=input comment="Block hole Windows" dst-port=135,137-139,445,593,4444 protocol=tcp
+add action=drop chain=forward dst-port=135,137-139,445,593,4444 protocol=tcp
+add action=drop chain=input dst-port=135,137-139 protocol=udp
+add action=drop chain=forward dst-port=135,137-139 protocol=udp
+
+# Защита от брутфорса SSH
+add action=drop chain=input comment="drop ssh brute forcers" dst-port=22 \
+    protocol=tcp src-address-list=ssh_blacklist
+add action=add-src-to-address-list address-list=ssh_blacklist \
+    address-list-timeout=3d chain=input connection-state=new dst-port=22 \
+    protocol=tcp src-address-list=ssh_stage3
+add action=add-src-to-address-list address-list=ssh_stage3 address-list-timeout= \
+    30m chain=input connection-state=new dst-port=22 protocol=tcp \
+    src-address-list=ssh_stage2
+add action=add-src-to-address-list address-list=ssh_stage2 address-list-timeout= \
+    30m chain=input connection-state=new dst-port=22 protocol=tcp \
+    src-address-list=ssh_stage1
+add action=add-src-to-address-list address-list=ssh_stage1 address-list-timeout= \
+    30m chain=input connection-state=new dst-port=22 protocol=tcp
+
+# Защита от сканера портов
+add chain=input protocol=tcp psd=21,3s,3,1 action=add-src-to-address-list address-list=port_scanners address-list-timeout=2w comment="Port scanners to list" disabled=no
+# Комбинации TCP флагов, указывающих на использование сканера портов
+add chain=input protocol=tcp tcp-flags=fin,!syn,!rst,!psh,!ack,!urg action=add-src-to-address-list address-list=port_scanners address-list-timeout=2w comment="NMAP FIN Stealth scan"
+add chain=input protocol=tcp tcp-flags=fin,syn action=add-src-to-address-list address-list=port_scanners address-list-timeout=2w comment="SYN/FIN scan"
+add chain=input protocol=tcp tcp-flags=syn,rst action=add-src-to-address-list address-list=port_scanners address-list-timeout=2w comment="SYN/RST scan"
+add chain=input protocol=tcp tcp-flags=fin,psh,urg,!syn,!rst,!ack action=add-src-to-address-list address-list=port_scanners address-list-timeout=2w comment="FIN/PSH/URG scan"
+add chain=input protocol=tcp tcp-flags=fin,syn,rst,psh,ack,urg action=add-src-to-address-list address-list=port_scanners address-list-timeout=2w comment="ALL/ALL scan"
+add chain=input protocol=tcp tcp-flags=!fin,!syn,!rst,!psh,!ack,!urg action=add-src-to-address-list address-list=port_scanners address-list-timeout=2w comment="NMAP NULL scan"
+# Запрет подключений сканеров портов
+add chain=input src-address-list=port_scanners action=drop comment="dropping port scanners" disabled=no
+add chain=forward src-address-list=port_scanners action=drop comment="dropping port scanners" disabled=no
+
+# Разрешаем уже установленные подключения и связанные
+add chain=input connection-state=established action=accept comment="Allow Established connections"
+add chain=input connection-state=related action=accept comment="Allow Related connections"
+
+# Разрешаем внешние подключения для собственных нужд
+add action=accept chain=input dst-port=22 in-interface=$ExternalInterface protocol=tcp comment="Allow SSH"
+add action=accept chain=input dst-port=80 in-interface=$ExternalInterface protocol=tcp comment="Allow HTTP"
+add action=accept chain=input dst-port=161 in-interface=$ExternalInterface protocol=udp comment="Allow SNMP"
+add action=accept chain=input dst-port=443 in-interface=$ExternalInterface protocol=tcp comment="Allow HTTPS"
+add action=accept chain=input dst-port=1194 in-interface=$ExternalInterface protocol=tcp comment="Allow OpenVPN"
+add action=accept chain=input dst-port=1194 in-interface=$ExternalInterface protocol=udp
+add chain=input comment="Allow L2TP" dst-port=1701 in-interface=$ExternalInterface protocol=tcp
+add chain=input comment="Allow L2TP" dst-port=1701 in-interface=$ExternalInterface protocol=udp
+add chain=input comment="Allow PPTP" dst-port=1723 in-interface=$ExternalInterface protocol=tcp
+add chain=input comment="Allow GRE" in-interface=$ExternalInterface protocol=gre
+
+# Запрет всех входящих на маршрутизатор
+add chain=input in-interface=$ExternalInterface action=drop comment="Drop everything else"
+
+# Разрешаем уже установленные подключения и связанные
+add chain=forward connection-state=established action=accept comment="Allow Established connections"
+add chain=forward connection-state=related action=accept comment="Allow Related connections"
+
+# Запрет транзита '''битых''' и '''неправильных''' пакетов
+add chain=forward connection-state=invalid action=drop comment="Drop Invalid connections"
+
+# Заперт установки новых транзитных входящих соединений на $ExternalInterface порту
+add action=drop chain=forward comment="Drop new forward $ExternalInterface" connection-state=new in-interface=$ExternalInterface
