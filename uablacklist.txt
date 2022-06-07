@@ -1,6 +1,16 @@
-# Test 1
-188.114.96.3/32
-188.114.97.3/32
-# Test 2
-188.114.96.2/32
-188.114.97.2/32
+# drive.ru
+146.255.192.0/23 ; drive.ru
+# habr.com
+178.248.236.0/23 ; habr.com
+178.248.232.0/21 ; habr.com
+#forummikrotik.ru
+195.161.0.0/16 ; forummikrotik.ru
+#seasonvar.ru
+172.67.176.0/20 ; seasonvar.ru
+104.21.48.0/20 ; seasonvar.ru
+104.21.32.0/19 ; seasonvar.ru
+104.16.0.0/12 ; seasonvar.ru
+#yaplakal.com
+172.67.64.0/20 ; yaplakal.com
+104.26.0.0/20 ; yaplakal.com
+104.16.0.0/12 ; yaplakal.com
